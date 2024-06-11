@@ -3,7 +3,6 @@ import { defineConfig} from 'vitepress'
 export default defineConfig({
   lang: 'en-US',
   title: 'Infrared',
-  titleTemplate: ':title | Reverse Proxy',
   description: 'The Minecraft Reverse Proxy',
   cleanUrls: true,
   head: [

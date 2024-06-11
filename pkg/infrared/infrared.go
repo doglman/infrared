@@ -23,7 +23,7 @@ type Config struct {
 
 func NewConfig() Config {
 	return Config{
-		BindAddr:            ":25565",
+		BindAddr:            "localhost:25565",
 		KeepAliveTimeout:    30 * time.Second,
 		ServerConfigs:       make([]ServerConfig, 0),
 		FiltersConfig:       NewFilterConfig(),

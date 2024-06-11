@@ -58,43 +58,50 @@ type HandshakeResponse struct {
 }
 
 func (r *HandshakeResponse) StatusResponse(protVer protocol.Version) (status.ResponseJSON, protocol.Packet) {
+	cfg := r.Config.StatusConfig
+	if cfg.ProtocolNumber < 0 {
+		return r.renderStatusPacket(protVer)
+	}
+
 	r.statusOnce.Do(func() {
-		cfg := r.Config.StatusConfig
-
-		protNum := cfg.ProtocolNumber
-		if protNum < 0 {
-			protNum = int(protVer)
-		}
-
-		r.statusRespJSON = status.ResponseJSON{
-			Version: status.VersionJSON{
-				Name:     cfg.VersionName,
-				Protocol: protNum,
-			},
-			Players: status.PlayersJSON{
-				Max:    cfg.MaxPlayerCount,
-				Online: cfg.PlayerCount,
-				Sample: cfg.PlayerSamples.PlayerSampleJSON(),
-			},
-			Favicon:     parseServerIcon(cfg.Icon),
-			Description: parseJSONTextComponent(cfg.MOTD),
-		}
-
-		respBytes, err := json.Marshal(r.statusRespJSON)
-		if err != nil {
-			panic(err)
-		}
-
-		statusPk := status.ClientBoundResponse{
-			JSONResponse: protocol.String(string(respBytes)),
-		}
-
-		if err := statusPk.Marshal(&r.statusRespPk); err != nil {
-			panic(err)
-		}
+		protVer = protocol.Version(cfg.ProtocolNumber)
+		r.statusRespJSON, r.statusRespPk = r.renderStatusPacket(protVer)
 	})
 
 	return r.statusRespJSON, r.statusRespPk
+}
+
+func (r *HandshakeResponse) renderStatusPacket(protVer protocol.Version) (status.ResponseJSON, protocol.Packet) {
+	cfg := r.Config.StatusConfig
+	respJSON := status.ResponseJSON{
+		Version: status.VersionJSON{
+			Name:     cfg.VersionName,
+			Protocol: int(protVer),
+		},
+		Players: status.PlayersJSON{
+			Max:    cfg.MaxPlayerCount,
+			Online: cfg.PlayerCount,
+			Sample: cfg.PlayerSamples.PlayerSampleJSON(),
+		},
+		Favicon:     parseServerIcon(cfg.Icon),
+		Description: parseJSONTextComponent(cfg.MOTD),
+	}
+
+	respBytes, err := json.Marshal(r.statusRespJSON)
+	if err != nil {
+		panic(err)
+	}
+
+	statusPk := status.ClientBoundResponse{
+		JSONResponse: protocol.String(string(respBytes)),
+	}
+
+	var respPk protocol.Packet
+	if err := statusPk.Marshal(&respPk); err != nil {
+		panic(err)
+	}
+
+	return respJSON, respPk
 }
 
 func (r *HandshakeResponse) LoginReponse() protocol.Packet {

@@ -1,10 +1,8 @@
 package infrared
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"io"
 	"net"
 	"strings"
 	"sync"
@@ -336,20 +334,30 @@ func (s *statusResponseCache) cacheStatusResponse(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	log.Info().Msg("new cache entry")
-
 	hash := xxhash.New()
-	if _, err := io.CopyN(hash, rand.Reader, 64); err != nil {
-		return err
-	}
+	hash.Write(statusResp.Description)
+	hash.WriteString(statusResp.Favicon)
 	hashSum := hash.Sum64()
 
 	s.statusHash[protVer] = hashSum
+
+	if _, ok := s.statusResponseCache[hashSum]; ok {
+		log.Debug().
+			Int32("protVer", int32(protVer)).
+			Msg("Linked existing cache entry")
+
+		return nil
+	}
+
 	s.statusResponseCache[hashSum] = &statusCacheEntry{
 		expiresAt:    time.Now().Add(s.ttl),
 		responseJSON: statusResp,
 		responsePk:   respPk,
 	}
+
+	log.Debug().
+		Int32("protVer", int32(protVer)).
+		Msg("Created new cache entry")
 
 	return nil
 }
@@ -369,8 +377,11 @@ func (s *statusResponseCache) prune() {
 	for protVer, hash := range s.statusHash {
 		for _, expiredHash := range expiredHashes {
 			if hash == expiredHash {
-				log.Info().Msg("delete cache entry")
 				delete(s.statusHash, protVer)
+
+				log.Debug().
+					Int32("protVer", int32(protVer)).
+					Msg("Deleted cache entry")
 			}
 		}
 	}
