@@ -249,6 +249,8 @@ func (ir *Infrared) handleConn(c *clientConn) error {
 		switch {
 		case errors.Is(err, ErrServerNotReachable) && c.handshake.IsLoginRequest():
 			return ir.handleLoginDisconnect(c, resp)
+		case errors.Is(err, ErrServerNotFound):
+			return ir.handleServerNotFound(c)
 		default:
 			return err
 		}
@@ -262,7 +264,7 @@ func (ir *Infrared) handleConn(c *clientConn) error {
 }
 
 func handleStatus(c *clientConn, resp ServerResponse) error {
-	if err := c.WritePacket(resp.StatusResponse); err != nil {
+	if err := c.WritePacket(resp.Packet); err != nil {
 		return err
 	}
 
@@ -279,7 +281,11 @@ func handleStatus(c *clientConn, resp ServerResponse) error {
 }
 
 func (ir *Infrared) handleLoginDisconnect(c *clientConn, resp ServerResponse) error {
-	return c.WritePacket(resp.StatusResponse)
+	return c.WritePacket(resp.Packet)
+}
+
+func (ir *Infrared) handleServerNotFound(c *clientConn) error {
+	return nil
 }
 
 func (ir *Infrared) handleLogin(c *clientConn, resp ServerResponse) error {

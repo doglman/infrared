@@ -90,7 +90,7 @@ type ServerRequest struct {
 
 type ServerResponse struct {
 	ServerConn        *ServerConn
-	StatusResponse    protocol.Packet
+	Packet            protocol.Packet
 	SendProxyProtocol bool
 }
 
@@ -136,7 +136,7 @@ func NewServerGateway(servers []*Server, responder ServerRequestResponder) (*Ser
 	}, nil
 }
 
-func (sg *ServerGateway) findServer(domain ServerDomain) *Server {
+func (sg ServerGateway) findServer(domain ServerDomain) *Server {
 	dm := string(domain)
 	dm = strings.ToLower(dm)
 	for d, srv := range sg.servers {
@@ -147,7 +147,7 @@ func (sg *ServerGateway) findServer(domain ServerDomain) *Server {
 	return nil
 }
 
-func (sg *ServerGateway) RequestServer(req ServerRequest) (ServerResponse, error) {
+func (sg ServerGateway) RequestServer(req ServerRequest) (ServerResponse, error) {
 	srv := sg.findServer(req.Domain)
 	if srv == nil {
 		return ServerResponse{}, ErrServerNotFound
@@ -176,7 +176,7 @@ func (r DialServerResponder) respondeToLoginRequest(_ ServerRequest, srv *Server
 	rc, err := srv.Dial()
 	if err != nil {
 		return ServerResponse{
-			StatusResponse: srv.dialTimeoutResp.LoginReponse(),
+			Packet: srv.dialTimeoutResp.LoginReponse(),
 		}, ErrServerNotReachable
 	}
 
@@ -200,23 +200,22 @@ func (r DialServerResponder) respondeToStatusRequest(req ServerRequest, srv *Ser
 		r.respProvs[srv] = respProv
 	}
 
-	_, pk, err := respProv.StatusResponse(req.ClientAddr, req.ProtocolVersion, req.ReadPackets)
+	pk, err := respProv.StatusResponse(req.ClientAddr, req.ProtocolVersion, req.ReadPackets)
 	if err != nil {
 		return ServerResponse{}, err
 	}
 
 	return ServerResponse{
-		StatusResponse: pk,
+		Packet: pk,
 	}, nil
 }
 
 type StatusResponseProvider interface {
-	StatusResponse(net.Addr, protocol.Version, [2]protocol.Packet) (status.ResponseJSON, protocol.Packet, error)
+	StatusResponse(net.Addr, protocol.Version, [2]protocol.Packet) (protocol.Packet, error)
 }
 
 type statusCacheEntry struct {
 	expiresAt    time.Time
-	responseJSON status.ResponseJSON
 	responsePk   protocol.Packet
 }
 
@@ -233,12 +232,12 @@ func (s *statusResponseProvider) StatusResponse(
 	cliAddr net.Addr,
 	protVer protocol.Version,
 	readPks [2]protocol.Packet,
-) (status.ResponseJSON, protocol.Packet, error) {
+) (protocol.Packet, error) {
 	cacheRespone := false
 	if s.cache.ttl > 0 {
-		statusResp, statusPk, err := s.cache.statusResponse(protVer)
+	    statusPk, err := s.cache.statusResponse(protVer)
 		if err == nil {
-			return statusResp, statusPk, nil
+			return statusPk, nil
 		}
 		cacheRespone = true
 	}
@@ -247,20 +246,20 @@ func (s *statusResponseProvider) StatusResponse(
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrServerNotReachable):
-			respJSON, respPk := s.server.dialTimeoutResp.StatusResponse(protVer)
-			return respJSON, respPk, nil
+			respPk := s.server.dialTimeoutResp.StatusResponse(protVer)
+			return respPk, nil
 		default:
-			return status.ResponseJSON{}, protocol.Packet{}, err
+			return protocol.Packet{}, err
 		}
 	}
 
 	if cacheRespone {
 		if err := s.cache.cacheStatusResponse(protVer, statusResp, statusPk); err != nil {
-			return status.ResponseJSON{}, protocol.Packet{}, err
+			return protocol.Packet{}, err
 		}
 	}
 
-	return statusResp, statusPk, nil
+	return statusPk, nil
 }
 
 func (s *statusResponseProvider) requestNewStatusResponseJSON(
@@ -310,7 +309,7 @@ type statusResponseCache struct {
 
 func (s *statusResponseCache) statusResponse(
 	protVer protocol.Version,
-) (status.ResponseJSON, protocol.Packet, error) {
+) (protocol.Packet, error) {
 	// Prunes all expired status reponses
 	s.prune()
 
@@ -320,10 +319,10 @@ func (s *statusResponseCache) statusResponse(
 	hash, okHash := s.statusHash[protVer]
 	entry, okCache := s.statusResponseCache[hash]
 	if !okHash || !okCache {
-		return status.ResponseJSON{}, protocol.Packet{}, errors.New("not in cache")
+		return protocol.Packet{}, errors.New("not in cache")
 	}
 
-	return entry.responseJSON, entry.responsePk, nil
+	return entry.responsePk, nil
 }
 
 func (s *statusResponseCache) cacheStatusResponse(
@@ -351,7 +350,6 @@ func (s *statusResponseCache) cacheStatusResponse(
 
 	s.statusResponseCache[hashSum] = &statusCacheEntry{
 		expiresAt:    time.Now().Add(s.ttl),
-		responseJSON: statusResp,
 		responsePk:   respPk,
 	}
 

@@ -41,6 +41,10 @@ type HandshakeStatusResponseConfig struct {
 	MOTD           string        `yaml:"motd"`
 }
 
+func (cfg HandshakeStatusResponseConfig) IsProtocolNumberDynamic() bool {
+	return cfg.ProtocolNumber == -1
+}
+
 type HandshakeResponseConfig struct {
 	StatusConfig HandshakeStatusResponseConfig `yaml:"status"`
 	Message      string                        `yaml:"message"`
@@ -49,29 +53,36 @@ type HandshakeResponseConfig struct {
 type HandshakeResponse struct {
 	Config HandshakeResponseConfig
 
-	statusOnce     sync.Once
-	statusRespJSON status.ResponseJSON
-	statusRespPk   protocol.Packet
+	statusOnce   sync.Once
+	statusResp   status.ClientBoundResponse
+	statusRespPk protocol.Packet
 
 	loginOnce   sync.Once
 	loginRespPk protocol.Packet
 }
 
-func (r *HandshakeResponse) StatusResponse(protVer protocol.Version) (status.ResponseJSON, protocol.Packet) {
+func (r *HandshakeResponse) StatusResponse(protVer protocol.Version) protocol.Packet {
 	cfg := r.Config.StatusConfig
-	if cfg.ProtocolNumber < 0 {
-		return r.renderStatusPacket(protVer)
-	}
 
 	r.statusOnce.Do(func() {
 		protVer = protocol.Version(cfg.ProtocolNumber)
-		r.statusRespJSON, r.statusRespPk = r.renderStatusPacket(protVer)
+		r.renderStatusPacket(protVer)
 	})
 
-	return r.statusRespJSON, r.statusRespPk
+	if cfg.IsProtocolNumberDynamic() {
+		if err := r.statusResp.SetVersionProtocol(protVer); err != nil {
+			panic(err)
+		}
+
+		if err := r.statusResp.Marshal(&r.statusRespPk); err != nil {
+			panic(err)
+		}
+	}
+
+	return r.statusRespPk
 }
 
-func (r *HandshakeResponse) renderStatusPacket(protVer protocol.Version) (status.ResponseJSON, protocol.Packet) {
+func (r *HandshakeResponse) renderStatusPacket(protVer protocol.Version) {
 	cfg := r.Config.StatusConfig
 	respJSON := status.ResponseJSON{
 		Version: status.VersionJSON{
@@ -87,21 +98,14 @@ func (r *HandshakeResponse) renderStatusPacket(protVer protocol.Version) (status
 		Description: parseJSONTextComponent(cfg.MOTD),
 	}
 
-	respBytes, err := json.Marshal(r.statusRespJSON)
+	respBytes, err := json.Marshal(respJSON)
 	if err != nil {
 		panic(err)
 	}
 
-	statusPk := status.ClientBoundResponse{
+	r.statusResp = status.ClientBoundResponse{
 		JSONResponse: protocol.String(string(respBytes)),
 	}
-
-	var respPk protocol.Packet
-	if err := statusPk.Marshal(&respPk); err != nil {
-		panic(err)
-	}
-
-	return respJSON, respPk
 }
 
 func (r *HandshakeResponse) LoginReponse() protocol.Packet {

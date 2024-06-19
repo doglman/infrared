@@ -2,8 +2,11 @@ package status
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/haveachin/infrared/pkg/infrared/protocol"
+	"github.com/tidwall/sjson"
 )
 
 const (
@@ -29,6 +32,22 @@ func (pk *ClientBoundResponse) Unmarshal(packet protocol.Packet) error {
 	return packet.Decode(
 		&pk.JSONResponse,
 	)
+}
+
+func (pk *ClientBoundResponse) SetVersionProtocol(protVer protocol.Version) error {
+	jsonStr := string(pk.JSONResponse)
+	if jsonStr == "" {
+		return errors.New("no json in packet")
+	}
+
+	version := int32(protVer)
+	jsonStr, err := sjson.Set(jsonStr, "version.protocol", version)
+	if err != nil {
+		return fmt.Errorf("set version.protocol: %w", err)
+	}
+	pk.JSONResponse = protocol.String(jsonStr)
+
+	return nil
 }
 
 type ResponseJSON struct {
